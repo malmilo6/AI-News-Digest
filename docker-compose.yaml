@@ -41,30 +41,21 @@ services:
       retries: 5
     networks:
       - n8n_network
-
-  chromadb:
-    image: chromadb/chroma:latest
+  qdrant:
+    image: qdrant/qdrant:latest
     restart: always
     ports:
-      - "8000:8000"
-    environment:
-      - ALLOW_RESET=TRUE
-      - CHROMA_SERVER_HOST=0.0.0.0
-      - CHROMA_SERVER_HTTP_PORT=8000
+      - "6333:6333"
+      - "6334:6334"
     volumes:
-      - chroma_data:/chroma_data
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/heartbeat"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      - qdrant_data:/qdrant/storage
     networks:
       - n8n_network
 
 volumes:
   n8n_data:
   postgres_data:
-  chroma_data:
+  qdrant_data:
 
 
 networks:

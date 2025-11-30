@@ -1,0 +1,805 @@
+{
+  "name": "PGVector Data Ingestion Pipeline",
+  "nodes": [
+    {
+      "parameters": {
+        "url": "https://rss.nytimes.com/services/xml/rss/nyt/Technology.xml",
+        "options": {
+          "customFields": ""
+        }
+      },
+      "name": "RSS NY Times",
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1,
+      "position": [
+        -16,
+        -48
+      ],
+      "id": "ef721c65-32c2-4d85-b595-2e3255a68f4c"
+    },
+    {
+      "parameters": {
+        "url": "https://feeds.arstechnica.com/arstechnica/index",
+        "options": {
+          "customFields": ""
+        }
+      },
+      "name": "RSS ArsTech",
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1,
+      "position": [
+        -16,
+        112
+      ],
+      "id": "ed66eae7-1dfb-42a5-ab03-caf92fdc5da0"
+    },
+    {
+      "parameters": {
+        "url": "https://www.wired.com/feed/rss",
+        "options": {
+          "customFields": ""
+        }
+      },
+      "name": "RSS Wired",
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1,
+      "position": [
+        -16,
+        272
+      ],
+      "id": "2bbb483e-42a3-411b-ac38-3621d98410c5"
+    },
+    {
+      "parameters": {
+        "language": "python",
+        "pythonCode": "def get_domain(url):\n    from urllib.parse import urlparse\n    try:\n        domain = urlparse(url).netloc\n        return domain.replace('www.', '').split('.')[0]\n    except:\n        return 'unknown'\n\ndef get_category(item):\n    categories = item.get('categories', [])\n    if categories:\n        return categories[0]\n    return 'General'\n\ndef get_summary(item):\n    return item.get('contentSnippet') or item.get('description') or item.get('title') or 'No summary'\n\n# Process all incoming items\nnormalized_articles = []\n\nfor item in _input.all():\n    article = {\n        'title': item['json']['title'],\n        'url': item['json']['link'],\n        'source': get_domain(item['json']['link']),\n        'published_at': item['json'].get('pubDate') or item['json'].get('isoDate'),\n        'category': get_category(item['json']),\n        'summary': get_summary(item['json']),\n        'content': item['json'].get('content') or item['json'].get('contentSnippet') or item['json'].get('description') or ''\n    }\n    normalized_articles.append(article)\n\nreturn normalized_articles"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        368,
+        112
+      ],
+      "id": "645685ee-ab66-45be-84ca-242cc9efacdf",
+      "name": "Normalize articles"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select url from articles where url in ('{{ $json.response.csv_urls }}')\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        768,
+        112
+      ],
+      "id": "bcef6340-3de2-4035-8896-2073442a157f",
+      "name": "Check for duplicates",
+      "credentials": {
+        "postgres": {
+          "id": "pj1Bh0vlZ2P9PAIU",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "language": "python",
+        "pythonCode": "# Loop over input items and add a new field called 'myNewField' to the JSON of each one\nurls = []\nfor item in _input.all():\n  urls.append(item.json.url)\n\nurls_to_csv = \"','\".join(urls)\n\nreturn [\n  {\n    'response':{\n      'csv_urls': urls_to_csv,\n      'list_urls': urls\n    }\n  }\n]"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        576,
+        112
+      ],
+      "id": "98ea2c8c-4993-43c2-bab6-4e79ad661ba2",
+      "name": "Get urls"
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "fieldsToMatchString": "url",
+        "joinMode": "keepNonMatches",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        720,
+        464
+      ],
+      "id": "b28bbdaa-4a4b-4835-a3a6-1b832acf890f",
+      "name": "Merge"
+    },
+    {
+      "parameters": {
+        "schema": {
+          "__rl": true,
+          "mode": "list",
+          "value": "public"
+        },
+        "table": {
+          "__rl": true,
+          "value": "=articles",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "title": "={{ $json.title }}",
+            "url": "={{ $json.url }}",
+            "published_at": "={{ $json.published_at }}",
+            "source": "={{ $json.source }}",
+            "category": "={{ $json.category }}",
+            "summary": "={{ $json.summary }}",
+            "content": "={{ $json.content }}"
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "title",
+              "displayName": "title",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "url",
+              "displayName": "url",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "source",
+              "displayName": "source",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "published_at",
+              "displayName": "published_at",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "category",
+              "displayName": "category",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "summary",
+              "displayName": "summary",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "content",
+              "displayName": "content",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "created_at",
+              "displayName": "created_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        960,
+        464
+      ],
+      "id": "6079ae40-322b-45fb-b5d2-3aaa9451fb0b",
+      "name": "Insert rows in a table",
+      "credentials": {
+        "postgres": {
+          "id": "pj1Bh0vlZ2P9PAIU",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        1120,
+        112
+      ],
+      "id": "3ea5c1e3-a111-478e-b9fa-757fecba6845",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select title, summary, source, published_at as date, url\nfrom articles \nwhere published_at >= NOW() - INTERVAL '7 days'\norder by source, published_at desc;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1328,
+        112
+      ],
+      "id": "fe430aa4-5566-4cac-b72f-cdac887de836",
+      "name": "Execute a SQL query",
+      "credentials": {
+        "postgres": {
+          "id": "pj1Bh0vlZ2P9PAIU",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "html": "={{ $json.html }}",
+        "options": {
+          "emDelimiter": "_",
+          "useLinkReferenceDefinitions": false
+        }
+      },
+      "type": "n8n-nodes-base.markdown",
+      "typeVersion": 1,
+      "position": [
+        1776,
+        112
+      ],
+      "id": "82d21883-2e69-4912-a3cf-6b0b22a8a831",
+      "name": "Markdown"
+    },
+    {
+      "parameters": {
+        "language": "python",
+        "pythonCode": "from datetime import datetime, timedelta\n\narticles = []\nfor item in _input.all():\n    if 'title' in item['json']:\n        articles.append(item['json'])\n\nprint(f\"Processing {len(articles)} articles\")\n\ntoday = datetime.now()\nweek_ago = today - timedelta(days=7)\nweek_range = f\"{week_ago.strftime('%b %d')} - {today.strftime('%b %d, %Y')}\"\n\ngroups = {}\nfor article in articles:\n    source = article['source']\n    if source not in groups:\n        groups[source] = []\n    groups[source].append(article)\n\n# Generate HTML\nhtml = f\"\"\"\n<html>\n<head>\n    <title>Weekly Digest</title>\n    <style>\n        body {{ font-family: Arial; margin: 40px; }}\n        .header {{ text-align: center; margin-bottom: 30px; }}\n        .group {{ margin-bottom: 30px; }}\n        .group-title {{ background: #eee; padding: 10px; font-size: 1.2em; }}\n        .article {{ margin: 15px 0; padding: 10px; border-left: 3px solid #007cba; }}\n        .article-title {{ font-weight: bold; margin-bottom: 5px; }}\n        .article-meta {{ color: #666; font-size: 0.9em; margin-bottom: 5px; }}\n    </style>\n</head>\n<body>\n    <div class=\"header\">\n        <h1>Weekly News Digest</h1>\n        <p>{week_range} | {len(articles)} total articles</p>\n    </div>\n\"\"\"\n\nfor source, source_articles in groups.items():\n    html += f'<div class=\"group\">\\n'\n    html += f'<div class=\"group-title\">{source} ({len(source_articles)} articles)</div>\\n'\n    \n    for article in source_articles:\n        date = datetime.fromisoformat(article['date'].replace('Z', '+00:00')).strftime('%b %d, %Y')\n        html += f\"\"\"\n        <div class=\"article\">\n            <div class=\"article-title\"><a href=\"{article['url']}\">{article['title']}</a></div>\n            <div class=\"article-meta\">{date} | {source}</div>\n            <div class=\"article-summary\">{article['summary']}</div>\n        </div>\n        \"\"\"\n    \n    html += '</div>\\n'\n\nhtml += \"</body></html>\"\n\nreturn [{\n    'json': {\n        'html': html,\n        'article_count': len(articles),\n        'week_range': week_range\n    }\n}]"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1552,
+        112
+      ],
+      "id": "eee8497f-b619-4740-a5e5-5dd1d3c4aa1f",
+      "name": "Code in Python (Beta)"
+    },
+    {
+      "parameters": {
+        "operation": "toText",
+        "sourceProperty": "data",
+        "options": {
+          "fileName": "report.md"
+        }
+      },
+      "type": "n8n-nodes-base.convertToFile",
+      "typeVersion": 1.1,
+      "position": [
+        1984,
+        112
+      ],
+      "id": "5aa0b728-5df6-47ae-874d-59a22b3afa78",
+      "name": "Convert to File"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -368,
+        112
+      ],
+      "id": "922cdc46-c7c4-4568-bdf2-34b73cca20af",
+      "name": "Run"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "bf96dc69-7ce7-4f08-a263-24982d5be671",
+      "name": "Embeddings OpenAI",
+      "type": "@n8n/n8n-nodes-langchain.embeddingsOpenAi",
+      "position": [
+        368,
+        1072
+      ],
+      "typeVersion": 1.2,
+      "credentials": {
+        "openAiApi": {
+          "id": "h3bV5szIGPyWoQKN",
+          "name": "OpenAi account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "661b9cdb-c1eb-4e4f-9570-85f257a0ce60",
+      "name": "AI Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "position": [
+        224,
+        720
+      ],
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "7b4d5318-7046-408f-aeec-22ca1d44ec85",
+      "name": "When chat message received",
+      "type": "@n8n/n8n-nodes-langchain.chatTrigger",
+      "position": [
+        32,
+        720
+      ],
+      "webhookId": "4091fa09-fb9a-4039-9411-7104d213f601",
+      "typeVersion": 1.1
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-4o-mini"
+        },
+        "options": {}
+      },
+      "id": "d7ae4ce5-258d-4bc1-adb7-804f19bd7b44",
+      "name": "OpenAI Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "position": [
+        224,
+        912
+      ],
+      "typeVersion": 1.2,
+      "credentials": {
+        "openAiApi": {
+          "id": "WGvUzBuY1BYOMEXM",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "textSplittingMode": "custom",
+        "options": {
+          "metadata": {
+            "metadataValues": [
+              {
+                "name": "=title",
+                "value": "={{ $json.title }}"
+              },
+              {
+                "name": "id",
+                "value": "={{ $json.id }}"
+              },
+              {
+                "name": "url",
+                "value": "={{ $json.url }}"
+              },
+              {
+                "name": "=source",
+                "value": "={{ $json.source }}"
+              },
+              {
+                "name": "category",
+                "value": "={{ $json.category }}"
+              },
+              {
+                "name": "summary",
+                "value": "=  {{ $json.summary }}"
+              },
+              {
+                "name": "content",
+                "value": "={{ $json.content }}"
+              }
+            ]
+          }
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.documentDefaultDataLoader",
+      "typeVersion": 1.1,
+      "position": [
+        1280,
+        672
+      ],
+      "id": "85ec6060-423c-4652-9355-74fea2431705",
+      "name": "Default Data Loader1"
+    },
+    {
+      "parameters": {
+        "options": {
+          "batchSize": 512
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.embeddingsOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        1088,
+        688
+      ],
+      "id": "dc1f4184-e06b-4ce8-beae-e87857b92b8c",
+      "name": "Embeddings OpenAI1",
+      "credentials": {
+        "openAiApi": {
+          "id": "WGvUzBuY1BYOMEXM",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "insert",
+        "qdrantCollection": {
+          "__rl": true,
+          "value": "articles",
+          "mode": "list",
+          "cachedResultName": "articles"
+        },
+        "options": {
+          "metadataPayloadKey": "metadata"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.vectorStoreQdrant",
+      "typeVersion": 1.3,
+      "position": [
+        1184,
+        464
+      ],
+      "id": "a3f6cc61-0533-429d-8be0-c5aa2b252e1a",
+      "name": "Qdrant Vector Store",
+      "credentials": {
+        "qdrantApi": {
+          "id": "WwFSFL859A4efyBN",
+          "name": "QdrantApi account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "type": "@n8n/n8n-nodes-langchain.textSplitterTokenSplitter",
+      "typeVersion": 1,
+      "position": [
+        1280,
+        848
+      ],
+      "id": "6fe96cc2-cd6a-4054-8dc4-c7b16912ad7d",
+      "name": "Token Splitter"
+    },
+    {
+      "parameters": {
+        "mode": "retrieve-as-tool",
+        "toolDescription": "Fetch article data",
+        "qdrantCollection": {
+          "__rl": true,
+          "value": "articles",
+          "mode": "list",
+          "cachedResultName": "articles"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.vectorStoreQdrant",
+      "typeVersion": 1.3,
+      "position": [
+        368,
+        928
+      ],
+      "id": "ec3a0558-bb45-464d-9810-e26fb882218e",
+      "name": "Qdrant Vector Store1",
+      "credentials": {
+        "qdrantApi": {
+          "id": "WwFSFL859A4efyBN",
+          "name": "QdrantApi account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "RSS NY Times": {
+      "main": [
+        [
+          {
+            "node": "Normalize articles",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "RSS ArsTech": {
+      "main": [
+        [
+          {
+            "node": "Normalize articles",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "RSS Wired": {
+      "main": [
+        [
+          {
+            "node": "Normalize articles",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize articles": {
+      "main": [
+        [
+          {
+            "node": "Get urls",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Check for duplicates": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get urls": {
+      "main": [
+        [
+          {
+            "node": "Check for duplicates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Insert rows in a table",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute a SQL query": {
+      "main": [
+        [
+          {
+            "node": "Code in Python (Beta)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in Python (Beta)": {
+      "main": [
+        [
+          {
+            "node": "Markdown",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Markdown": {
+      "main": [
+        [
+          {
+            "node": "Convert to File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run": {
+      "main": [
+        [
+          {
+            "node": "RSS NY Times",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "RSS ArsTech",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "RSS Wired",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Convert to File": {
+      "main": [
+        []
+      ]
+    },
+    "Insert rows in a table": {
+      "main": [
+        [
+          {
+            "node": "Qdrant Vector Store",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embeddings OpenAI": {
+      "ai_embedding": [
+        [
+          {
+            "node": "Qdrant Vector Store1",
+            "type": "ai_embedding",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "When chat message received": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Default Data Loader1": {
+      "ai_document": [
+        [
+          {
+            "node": "Qdrant Vector Store",
+            "type": "ai_document",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embeddings OpenAI1": {
+      "ai_embedding": [
+        [
+          {
+            "node": "Qdrant Vector Store",
+            "type": "ai_embedding",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Token Splitter": {
+      "ai_textSplitter": [
+        [
+          {
+            "node": "Default Data Loader1",
+            "type": "ai_textSplitter",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Qdrant Vector Store1": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "b2271bfc-6bd6-4faa-b9fa-b96aa7c40ed4",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "648299e299cac772364408cdc8842b742b620f4e23b0830e3cf1308d7569bc02"
+  },
+  "id": "DgEdi82ktPHqNLTT",
+  "tags": []
+}
